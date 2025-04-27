@@ -11,10 +11,9 @@ import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { Progress } from "@/components/ui/progress"
-import { useFirebase } from "@/lib/firebase-context"
-import { addTreePlanting, uploadImage } from "@/lib/firebase-service"
-import { useAuth } from "@/lib/auth-context"
-import { addTree } from "@/lib/firebase-service"
+import { supabase } from "@/lib/supabase"
+import { uploadImage } from "@/lib/supabase-service"
+import { User } from '@supabase/supabase-js'
 
 interface TreePlantingWizardProps {
   onComplete: (data: any) => void
@@ -22,7 +21,6 @@ interface TreePlantingWizardProps {
 }
 
 export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardProps) {
-  const { user } = useFirebase()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState(false)
@@ -43,37 +41,82 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle")
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [currentCaptureField, setCurrentCaptureField] = useState<"treePhoto" | "selfieWithTree">("treePhoto")
 
   const totalSteps = 4
   const progress = (step / totalSteps) * 100
 
   useEffect(() => {
+    // Get current user from Supabase
+    const getUser = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (error) {
+        console.error('Error fetching user:', error.message)
+        toast({
+          title: "Authentication Error",
+          description: "Failed to get user information.",
+          variant: "destructive",
+        })
+        return
+      }
+      setUser(user)
+    }
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    getUser()
+
+    // Cleanup
     return () => {
+      subscription.unsubscribe()
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
     }
   }, [])
 
-  // Handle camera access
-  const startCamera = async (field: "treePhoto" | "selfieWithTree") => {
+  const handleCameraCapture = async (field: "treePhoto" | "selfieWithTree") => {
+    setCurrentCaptureField(field);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        setCameraActive(true)
-        streamRef.current = stream
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+        setCameraActive(true);
       }
     } catch (error) {
-      console.error("Error accessing camera:", error)
       toast({
-        title: "Camera Error",
-        description: "Could not access camera. Please ensure you have granted camera permissions.",
+        title: "Error",
+        description: "Failed to access camera. Please check your camera permissions.",
         variant: "destructive",
-      })
-      setCameraActive(false)
+      });
     }
-  }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    
+    context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg');
+    
+    setTreeData(prev => ({
+      ...prev,
+      [currentCaptureField]: dataUrl
+    }));
+    
+    stopCamera();
+  };
 
   const stopCamera = () => {
     if (streamRef.current) {
@@ -83,23 +126,100 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
     setCameraActive(false)
   }
 
-  const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return
+  const handleFileUpload = async (field: "treePhoto" | "selfieWithTree", file: File | null) => {
+    if (!file) {
+      toast({
+        title: "Error",
+        description: "Please select a valid image file.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const context = canvas.getContext("2d")
+    try {
+      const reader = new FileReader();
+      reader.onload = (e: ProgressEvent<FileReader>) => {
+        const result = e.target?.result;
+        if (!result || typeof result !== 'string') {
+          throw new Error('Failed to read file');
+        }
+        setTreeData(prev => ({
+          ...prev,
+          [field]: result
+        }));
+        toast({
+          title: "Success",
+          description: "Image uploaded successfully.",
+        });
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to upload image. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
-    if (!context) return
+  const verifyLiveness = async () => {
+    if (!treeData.selfieWithTree) {
+      toast({
+        title: "Error",
+        description: "Please take a selfie with your tree first.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    setVerifying(true);
+    try {
+      // Simulate verification delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setVerificationStatus("success");
+      toast({
+        title: "Success",
+        description: "Verification completed successfully!",
+      });
+      setStep(4);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Verification failed. Please try again.",
+        variant: "destructive",
+      });
+      setVerificationStatus("error");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
-    const imageUrl = canvas.toDataURL("image/jpeg")
-    setTreeData({ ...treeData, [cameraActive ? 'treePhoto' : 'selfieWithTree']: imageUrl })
-    stopCamera()
-  }
+  const handleNext = () => {
+    if (step === totalSteps) {
+      onComplete({
+        ...treeData,
+        coins: 100,
+        date: new Date().toISOString(),
+      });
+    } else {
+      setStep(step + 1);
+    }
+  };
+
+  const isStepComplete = () => {
+    switch (step) {
+      case 1:
+        return treeData.species && treeData.location;
+      case 2:
+        return !!treeData.treePhoto;
+      case 3:
+        return !!treeData.selfieWithTree;
+      case 4:
+        return true;
+      default:
+        return false;
+    }
+  };
 
   // Handle geolocation
   const getLocation = () => {
@@ -150,105 +270,6 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
         description: "Geolocation is not supported by your browser.",
         variant: "destructive",
       })
-    }
-  }
-
-  const handleFileUpload = async (field: "treePhoto" | "selfieWithTree", file: File | null) => {
-    if (!file || !user) return
-    setLoading(true)
-    try {
-      const path = `trees/${user.uid}/${field}/${Date.now()}_${file.name}`
-      const imageUrl = await uploadImage(file, path)
-      setTreeData({ ...treeData, [field]: imageUrl })
-      toast({
-        title: "Success",
-        description: "Image uploaded successfully!",
-      })
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to upload image. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleCameraCapture = async (field: "treePhoto" | "selfieWithTree") => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      toast({
-        title: "Error",
-        description: "Camera access is not supported on your device.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
-      setCameraActive(true)
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to access camera. Please check permissions.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const verifyLiveness = async () => {
-    if (!treeData.selfieWithTree) return
-
-    setVerifying(true)
-    try {
-      // Simulate verification process
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      setVerificationStatus("success")
-      toast({
-        title: "Success",
-        description: "Tree planting verified successfully!",
-      })
-    } catch (error) {
-      setVerificationStatus("error")
-      toast({
-        title: "Error",
-        description: "Verification failed. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setVerifying(false)
-    }
-  }
-
-  const handleNext = () => {
-    if (step === totalSteps) {
-      onComplete({
-        ...treeData,
-        coins: 100,
-        date: new Date().toISOString(),
-      })
-    } else {
-      setStep(step + 1)
-    }
-  }
-
-  const isStepComplete = () => {
-    switch (step) {
-      case 1:
-        return treeData.species && treeData.location
-      case 2:
-        return !!treeData.treePhoto
-      case 3:
-        return !!treeData.selfieWithTree
-      case 4:
-        return true
-      default:
-        return false
     }
   }
 

@@ -8,47 +8,48 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Trophy, Leaf, Search, Filter, TreePine } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
-import { getLeaderboard } from "@/lib/firebase-service"
+import { getLeaderboard } from "@/lib/supabase-service"
+import { useToast } from "@/hooks/use-toast"
 
 interface LeaderboardEntry {
   id: string
   name: string
   trees: number
   coins: number
-  rank: number
-  avatar: string
   streak: number
-  lastActive: string
+  last_active: string
 }
 
 export function LeaderboardTable() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [timeFilter, setTimeFilter] = useState("all")
+  const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'week'>('all')
   const [sortBy, setSortBy] = useState<"trees" | "coins" | "streak">("trees")
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([])
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      try {
-        setLoading(true)
-        const data = await getLeaderboard(timeFilter)
-        setLeaderboardData(data.map((entry, index) => ({
-          ...entry,
-          rank: index + 1,
-          avatar: entry.avatar || `/avatars/${(index % 3) + 1}.png` // Fallback avatar
-        })))
-      } catch (error) {
-        console.error("Error fetching leaderboard:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchLeaderboard()
   }, [timeFilter])
 
-  const filteredData = leaderboardData
+  const fetchLeaderboard = async () => {
+    try {
+      setLoading(true)
+      const data = await getLeaderboard(timeFilter)
+      setLeaderboard(data as LeaderboardEntry[])
+    } catch (error) {
+      console.error("Error fetching leaderboard:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load leaderboard. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredData = leaderboard
     .filter(entry => 
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
@@ -78,6 +79,10 @@ export function LeaderboardTable() {
     }
   }
 
+  if (loading) {
+    return <div className="flex items-center justify-center h-64">Loading leaderboard...</div>
+  }
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -102,9 +107,9 @@ export function LeaderboardTable() {
               />
             </div>
             <div className="flex gap-2">
-              <Select value={timeFilter} onValueChange={setTimeFilter}>
+              <Select value={timeFilter} onValueChange={(value: 'all' | 'month' | 'week') => setTimeFilter(value)}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Time Period" />
+                  <SelectValue placeholder="Select time period" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Time</SelectItem>
@@ -125,76 +130,70 @@ export function LeaderboardTable() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-700"></div>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Rank</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Trees</TableHead>
-                  <TableHead>Coins</TableHead>
-                  <TableHead>Streak</TableHead>
-                  <TableHead>Last Active</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredData.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      <span className={`font-bold ${getRankColor(entry.rank)}`}>
-                        #{entry.rank}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                          <img
-                            src={entry.avatar}
-                            alt={entry.name}
-                            className="w-6 h-6 rounded-full"
-                          />
-                        </div>
-                        <span className="font-medium">{entry.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <TreePine className="h-4 w-4 text-green-700" />
-                          <span className="font-medium">{entry.trees}</span>
-                        </div>
-                        <Progress
-                          value={(entry.trees / (filteredData[0]?.trees || 1)) * 100}
-                          className="h-1"
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rank</TableHead>
+                <TableHead>User</TableHead>
+                <TableHead>Trees</TableHead>
+                <TableHead>Coins</TableHead>
+                <TableHead>Streak</TableHead>
+                <TableHead>Last Active</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredData.map((entry, index) => (
+                <TableRow key={entry.id}>
+                  <TableCell>
+                    <span className={`font-bold ${getRankColor(index + 1)}`}>
+                      #{index + 1}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                        <img
+                          src={`/avatars/${(index % 3) + 1}.png`}
+                          alt={entry.name}
+                          className="w-6 h-6 rounded-full"
                         />
                       </div>
-                    </TableCell>
-                    <TableCell>
+                      <span className="font-medium">{entry.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <Leaf className="h-4 w-4 text-green-700" />
-                        <span className="font-medium">{entry.coins.toLocaleString()}</span>
+                        <TreePine className="h-4 w-4 text-green-700" />
+                        <span className="font-medium">{entry.trees}</span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{entry.streak}</span>
-                        <span className="text-sm text-gray-500">days</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-gray-500">
-                        {new Date(entry.lastActive).toLocaleDateString()}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                      <Progress
+                        value={(entry.trees / (filteredData[0]?.trees || 1)) * 100}
+                        className="h-1"
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Leaf className="h-4 w-4 text-green-700" />
+                      <span className="font-medium">{entry.coins.toLocaleString()}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{entry.streak}</span>
+                      <span className="text-sm text-gray-500">days</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-gray-500">
+                      {new Date(entry.last_active).toLocaleDateString()}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
