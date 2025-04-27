@@ -33,21 +33,28 @@ export const updateUserProfile = async (userId: string, userData: any) => {
 
 // Tree planting related functions
 export const addTreePlanting = async (userId: string, treeData: any) => {
-  const treeRef = await addDoc(collection(db, 'trees'), {
-    userId,
-    ...treeData,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-  });
+  try {
+    const treeRef = await addDoc(collection(db, 'trees'), {
+      userId,
+      ...treeData,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    });
 
-  // Update user's tree count and coins
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, {
-    trees: increment(1),
-    coins: increment(100), // Award 100 coins per tree
-  });
+    // Update user's tree count and coins
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      trees: increment(1),
+      coins: increment(100), // Award 100 coins per tree
+    });
 
-  return treeRef.id;
+    return treeRef.id;
+  } catch (error: any) {
+    if (error.message?.includes('ERR_BLOCKED_BY_CLIENT')) {
+      throw new Error('Operation blocked by browser extension. Please disable ad blockers or privacy extensions for localhost:3000');
+    }
+    throw error;
+  }
 };
 
 export const verifyTreePlanting = async (treeId: string) => {
@@ -109,9 +116,19 @@ export const getLeaderboard = async (timeFilter: string = 'all') => {
 
 // Image upload function
 export const uploadImage = async (file: File, path: string): Promise<string> => {
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
-  return getDownloadURL(storageRef);
+  try {
+    const storageRef = ref(storage, path);
+    const metadata = {
+      contentType: file.type,
+    };
+    await uploadBytes(storageRef, file, metadata);
+    return getDownloadURL(storageRef);
+  } catch (error: any) {
+    if (error.message?.includes('ERR_BLOCKED_BY_CLIENT')) {
+      throw new Error('Upload blocked by browser extension. Please disable ad blockers or privacy extensions for localhost:3000');
+    }
+    throw error;
+  }
 };
 
 export async function addTree(userId: string, treeData: {

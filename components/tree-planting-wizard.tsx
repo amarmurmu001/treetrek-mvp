@@ -154,10 +154,10 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
   }
 
   const handleFileUpload = async (field: "treePhoto" | "selfieWithTree", file: File | null) => {
-    if (!file) return
+    if (!file || !user) return
     setLoading(true)
     try {
-      const path = `trees/${field}/${Date.now()}_${file.name}`
+      const path = `trees/${user.uid}/${field}/${Date.now()}_${file.name}`
       const imageUrl = await uploadImage(file, path)
       setTreeData({ ...treeData, [field]: imageUrl })
       toast({
