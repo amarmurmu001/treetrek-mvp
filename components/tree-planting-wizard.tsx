@@ -207,25 +207,33 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
               const response = await fetch(treeData.selfieWithTree!);
               const blob = await response.blob();
               const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
-              return await uploadImage(file, `trees/${user.id}/selfieWithTree`);
+              return await uploadImage(file, `trees/${user.id}/selfie`);
             })() : 
             treeData.selfieWithTree) : 
           undefined;
 
+        // Validate required fields
+        if (!treeData.species || !treeData.location) {
+          throw new Error("Species and location are required");
+        }
+
         // Create tree planting record
         const newTreeData: Partial<Tree> = {
+          user_id: user.id,
           species: treeData.species,
           location: treeData.location,
-          description: treeData.description,
-          tree_photo: treePhotoUrl,
-          selfie_with_tree: selfieUrl,
-          coordinates: {
+          description: treeData.description || undefined,
+          tree_photo: treePhotoUrl || undefined,
+          selfie: selfieUrl || undefined,
+          coordinates: treeData.coordinates.lat && treeData.coordinates.lng ? {
             lat: parseFloat(treeData.coordinates.lat),
             lng: parseFloat(treeData.coordinates.lng)
-          },
+          } : undefined,
           status: 'pending',
-          coins_earned: 100
+          created_at: new Date().toISOString()
         };
+
+        console.log('Submitting tree data:', newTreeData);
 
         const tree = await addTreePlanting(user.id, newTreeData);
 
@@ -237,10 +245,11 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
         onComplete({
           ...newTreeData,
           id: tree.id,
-          coins: 100,
+          coins: 100, // This is handled by the increment_user_stats RPC
           date: new Date().toISOString(),
         });
       } catch (error: any) {
+        console.error('Error planting tree:', error);
         toast({
           title: "Error",
           description: error.message || "Failed to record tree planting. Please try again.",

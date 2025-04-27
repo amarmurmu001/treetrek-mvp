@@ -9,10 +9,9 @@ export interface Tree {
   location: string;
   description?: string;
   tree_photo?: string;
-  selfie_with_tree?: string;
+  selfie?: string;
   coordinates?: { lat: number; lng: number };
   status: 'pending' | 'verified';
-  coins_earned: number;
   created_at: string;
   verified_at?: string;
 }
@@ -97,10 +96,9 @@ export const addTreePlanting = async (userId: string, treeData: Partial<Tree>) =
         location: treeData.location,
         description: treeData.description,
         tree_photo: treeData.tree_photo,
-        selfie_with_tree: treeData.selfie_with_tree,
+        selfie: treeData.selfie,
         coordinates: treeData.coordinates,
         status: 'pending',
-        coins_earned: 100,
         created_at: new Date().toISOString(),
       }])
       .select()
