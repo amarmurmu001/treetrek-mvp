@@ -12,12 +12,24 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { Progress } from "@/components/ui/progress"
 import { supabase } from "@/lib/supabase"
-import { uploadImage } from "@/lib/supabase-service"
-import { User } from '@supabase/supabase-js'
+import { uploadImage, addTreePlanting, Tree } from "@/lib/supabase-service"
+import { useAuth } from "@/lib/auth-context"
 
 interface TreePlantingWizardProps {
   onComplete: (data: any) => void
   onCancel: () => void
+}
+
+interface TreeFormData {
+  species: string;
+  location: string;
+  description: string;
+  treePhoto: string | null;
+  selfieWithTree: string | null;
+  coordinates: {
+    lat: string;
+    lng: string;
+  };
 }
 
 export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardProps) {
@@ -28,12 +40,12 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
   const [locationLoading, setLocationLoading] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [treeData, setTreeData] = useState({
+  const [treeData, setTreeData] = useState<TreeFormData>({
     species: "",
     location: "",
     description: "",
-    treePhoto: null as string | null,
-    selfieWithTree: null as string | null,
+    treePhoto: null,
+    selfieWithTree: null,
     coordinates: { lat: "", lng: "" },
   })
   const { toast } = useToast()
@@ -41,38 +53,14 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "verifying" | "success" | "error">("idle")
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const [user, setUser] = useState<User | null>(null)
+  const { user } = useAuth()
   const [currentCaptureField, setCurrentCaptureField] = useState<"treePhoto" | "selfieWithTree">("treePhoto")
 
   const totalSteps = 4
   const progress = (step / totalSteps) * 100
 
   useEffect(() => {
-    // Get current user from Supabase
-    const getUser = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      if (error) {
-        console.error('Error fetching user:', error.message)
-        toast({
-          title: "Authentication Error",
-          description: "Failed to get user information.",
-          variant: "destructive",
-        })
-        return
-      }
-      setUser(user)
-    }
-
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    getUser()
-
-    // Cleanup
     return () => {
-      subscription.unsubscribe()
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
@@ -82,7 +70,11 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
   const handleCameraCapture = async (field: "treePhoto" | "selfieWithTree") => {
     setCurrentCaptureField(field);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: field === "selfieWithTree" ? "user" : "environment"
+        } 
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
@@ -137,28 +129,24 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
     }
 
     try {
-      const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
-        const result = e.target?.result;
-        if (!result || typeof result !== 'string') {
-          throw new Error('Failed to read file');
-        }
-        setTreeData(prev => ({
-          ...prev,
-          [field]: result
-        }));
-        toast({
-          title: "Success",
-          description: "Image uploaded successfully.",
-        });
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
+      setLoading(true);
+      const imageUrl = await uploadImage(file, `trees/${user?.id}/${field}`);
+      setTreeData(prev => ({
+        ...prev,
+        [field]: imageUrl
+      }));
+      toast({
+        title: "Success",
+        description: "Image uploaded successfully.",
+      });
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to upload image. Please try again.",
+        description: error.message || "Failed to upload image. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -174,7 +162,8 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
 
     setVerifying(true);
     try {
-      // Simulate verification delay
+      // Here you would typically call your verification service
+      // For now, we'll simulate a verification delay
       await new Promise(resolve => setTimeout(resolve, 2000));
       setVerificationStatus("success");
       toast({
@@ -182,10 +171,10 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
         description: "Verification completed successfully!",
       });
       setStep(4);
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Verification failed. Please try again.",
+        description: error.message || "Verification failed. Please try again.",
         variant: "destructive",
       });
       setVerificationStatus("error");
@@ -194,13 +183,72 @@ export function TreePlantingWizard({ onComplete, onCancel }: TreePlantingWizardP
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === totalSteps) {
-      onComplete({
-        ...treeData,
-        coins: 100,
-        date: new Date().toISOString(),
-      });
+      try {
+        setLoading(true);
+        if (!user) throw new Error("You must be logged in to plant a tree");
+
+        // Upload images if they're data URLs
+        const treePhotoUrl = treeData.treePhoto ? 
+          (treeData.treePhoto.startsWith('data:') ? 
+            await (async () => {
+              const response = await fetch(treeData.treePhoto!);
+              const blob = await response.blob();
+              const file = new File([blob], 'tree-photo.jpg', { type: 'image/jpeg' });
+              return await uploadImage(file, `trees/${user.id}/treePhoto`);
+            })() : 
+            treeData.treePhoto) : 
+          undefined;
+
+        const selfieUrl = treeData.selfieWithTree ? 
+          (treeData.selfieWithTree.startsWith('data:') ? 
+            await (async () => {
+              const response = await fetch(treeData.selfieWithTree!);
+              const blob = await response.blob();
+              const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
+              return await uploadImage(file, `trees/${user.id}/selfieWithTree`);
+            })() : 
+            treeData.selfieWithTree) : 
+          undefined;
+
+        // Create tree planting record
+        const newTreeData: Partial<Tree> = {
+          species: treeData.species,
+          location: treeData.location,
+          description: treeData.description,
+          tree_photo: treePhotoUrl,
+          selfie_with_tree: selfieUrl,
+          coordinates: {
+            lat: parseFloat(treeData.coordinates.lat),
+            lng: parseFloat(treeData.coordinates.lng)
+          },
+          status: 'pending',
+          coins_earned: 100
+        };
+
+        const tree = await addTreePlanting(user.id, newTreeData);
+
+        toast({
+          title: "Success",
+          description: "Tree planting recorded successfully!",
+        });
+
+        onComplete({
+          ...newTreeData,
+          id: tree.id,
+          coins: 100,
+          date: new Date().toISOString(),
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to record tree planting. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
     } else {
       setStep(step + 1);
     }

@@ -93,14 +93,23 @@ export const addTreePlanting = async (userId: string, treeData: Partial<Tree>) =
       .from('trees')
       .insert([{
         user_id: userId,
-        ...treeData,
+        species: treeData.species,
+        location: treeData.location,
+        description: treeData.description,
+        tree_photo: treeData.tree_photo,
+        selfie_with_tree: treeData.selfie_with_tree,
+        coordinates: treeData.coordinates,
         status: 'pending',
+        coins_earned: 100,
         created_at: new Date().toISOString(),
       }])
       .select()
       .single();
 
-    if (treeError) throw treeError;
+    if (treeError) {
+      console.error('Error creating tree record:', treeError);
+      throw new Error(treeError.message);
+    }
 
     // Update user's tree count and coins
     const { error: userError } = await supabase.rpc('increment_user_stats', {
@@ -109,7 +118,10 @@ export const addTreePlanting = async (userId: string, treeData: Partial<Tree>) =
       coin_amount: 100
     });
 
-    if (userError) throw userError;
+    if (userError) {
+      console.error('Error updating user stats:', userError);
+      throw new Error(userError.message);
+    }
 
     // Check for new achievements
     await supabase.rpc('check_achievements', {
@@ -118,6 +130,7 @@ export const addTreePlanting = async (userId: string, treeData: Partial<Tree>) =
 
     return tree;
   } catch (error: any) {
+    console.error('Error in addTreePlanting:', error);
     throw error;
   }
 };
