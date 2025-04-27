@@ -5,7 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/lib/auth-context"
-import { Nav } from "@/components/nav"
+import { LayoutContent } from "@/components/layout-content"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -30,16 +30,11 @@ export default function RootLayout({
           storageKey="treetrek-theme"
         >
           <AuthProvider>
-            <div className="flex min-h-screen flex-col">
-              <Nav />
-              <main className="flex-1">
-                {children}
-              </main>
-            </div>
+            <LayoutContent>{children}</LayoutContent>
             <Toaster />
           </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
   )
-}
+} 
