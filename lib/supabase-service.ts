@@ -228,27 +228,50 @@ export const getUserAchievements = async (userId: string) => {
 };
 
 // Leaderboard related functions
-export const getLeaderboard = async (timeFilter: string = 'all') => {
-  let query = supabase
-    .from('users')
-    .select('id, name, trees, coins, streak, last_active')
-    .order('trees', { ascending: false })
-    .limit(100);
+interface LeaderboardOptions {
+  isGlobal?: boolean
+  isLocal?: boolean
+  isGuild?: boolean
+}
 
-  if (timeFilter === 'month') {
-    const lastMonth = new Date();
-    lastMonth.setMonth(lastMonth.getMonth() - 1);
-    query = query.gte('last_login', lastMonth.toISOString());
-  } else if (timeFilter === 'week') {
-    const lastWeek = new Date();
-    lastWeek.setDate(lastWeek.getDate() - 7);
-    query = query.gte('last_login', lastWeek.toISOString());
+export const getLeaderboard = async (timeFilter: string = 'all', options: LeaderboardOptions = {}) => {
+  try {
+    // For users, we want to show all users who have planted trees
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, trees, coins, streak, last_active')
+      .order('trees', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      console.error('Leaderboard query error:', error)
+      throw error
+    }
+
+    // Filter out users with 0 trees
+    const filteredData = data.filter(user => user.trees > 0)
+
+    // Apply time filter if needed
+    if (timeFilter === 'month' || timeFilter === 'week') {
+      const startDate = new Date()
+      if (timeFilter === 'month') {
+        startDate.setDate(1)
+      } else {
+        startDate.setDate(startDate.getDate() - startDate.getDay())
+      }
+      startDate.setHours(0, 0, 0, 0)
+      
+      return filteredData.filter(user => 
+        new Date(user.last_active) >= startDate
+      )
+    }
+
+    return filteredData
+  } catch (error) {
+    console.error('Error in getLeaderboard:', error)
+    throw error
   }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
-};
+}
 
 // Image upload function
 export const uploadImage = async (file: File, path: string): Promise<string> => {

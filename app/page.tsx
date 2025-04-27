@@ -1,3 +1,5 @@
+"use client"
+
 import Link from "next/link"
 import { ArrowRight, Leaf, TreePine, Trophy } from "lucide-react"
 import { Button } from "@/components/ui/button"

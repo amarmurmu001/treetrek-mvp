@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Leaf, ShoppingBag, TreePine, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,117 +9,78 @@ import { DashboardShell } from "@/components/dashboard-shell"
 import { RewardCard } from "@/components/reward-card"
 import { RewardRedemption } from "@/components/reward-redemption"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/lib/auth-context"
+import { getRewards } from "@/lib/supabase-service"
+
+interface Reward {
+  id: string
+  name: string
+  description: string
+  cost: number
+  image_url: string
+  category: 'cash' | 'product' | 'forest'
+}
 
 export default function RewardsPage() {
-  const [userCoins, setUserCoins] = useState(1250)
-  const [selectedReward, setSelectedReward] = useState<any>(null)
+  const [rewards, setRewards] = useState<Reward[]>([])
+  const [selectedReward, setSelectedReward] = useState<Reward | null>(null)
+  const [loading, setLoading] = useState(true)
+  const { userData } = useAuth()
   const { toast } = useToast()
 
-  const handleRewardSelect = (reward: any) => {
+  useEffect(() => {
+    fetchRewards()
+  }, [])
+
+  const fetchRewards = async () => {
+    try {
+      setLoading(true)
+      const data = await getRewards()
+      setRewards(data as Reward[])
+    } catch (error) {
+      console.error('Error fetching rewards:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load rewards. Please try again.",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRewardSelect = (reward: Reward) => {
     setSelectedReward(reward)
   }
 
   const handleRedemptionComplete = () => {
-    setUserCoins(userCoins - selectedReward.cost)
-    setSelectedReward(null)
-    toast({
-      title: "Reward Redeemed",
-      description: `You have successfully redeemed ${selectedReward.title}!`,
-      variant: "success",
-    })
+    if (selectedReward) {
+      toast({
+        title: "Reward Redeemed",
+        description: `You have successfully redeemed ${selectedReward.name}!`,
+        variant: "success",
+      })
+      setSelectedReward(null)
+      // Refresh user data to update coin balance
+      window.location.reload()
+    }
   }
 
-  const rewards = {
-    cash: [
-      {
-        id: "cash1",
-        title: "$10 Cash Reward",
-        description: "Redeem your Green Coins for real cash",
-        cost: 1000,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "cash",
-        icon: <Wallet className="h-5 w-5" />,
-      },
-      {
-        id: "cash2",
-        title: "$25 Cash Reward",
-        description: "Redeem your Green Coins for real cash",
-        cost: 2500,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "cash",
-        icon: <Wallet className="h-5 w-5" />,
-      },
-      {
-        id: "cash3",
-        title: "$50 Cash Reward",
-        description: "Redeem your Green Coins for real cash",
-        cost: 5000,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "cash",
-        icon: <Wallet className="h-5 w-5" />,
-      },
-    ],
-    products: [
-      {
-        id: "product1",
-        title: "Eco-Friendly Water Bottle",
-        description: "Sustainable stainless steel water bottle",
-        cost: 750,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "product",
-        icon: <ShoppingBag className="h-5 w-5" />,
-      },
-      {
-        id: "product2",
-        title: "Organic Plant Seeds",
-        description: "Start your own garden with these organic seeds",
-        cost: 350,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "product",
-        icon: <ShoppingBag className="h-5 w-5" />,
-      },
-      {
-        id: "product3",
-        title: "Bamboo Cutlery Set",
-        description: "Portable and reusable bamboo cutlery",
-        cost: 600,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "product",
-        icon: <ShoppingBag className="h-5 w-5" />,
-      },
-    ],
-    forest: [
-      {
-        id: "forest1",
-        title: "Rare Oak Tree",
-        description: "Add a majestic oak tree to your virtual forest",
-        cost: 500,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "forest",
-        icon: <TreePine className="h-5 w-5" />,
-      },
-      {
-        id: "forest2",
-        title: "Forest Waterfall",
-        description: "Add a beautiful waterfall to your virtual forest",
-        cost: 1200,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "forest",
-        icon: <TreePine className="h-5 w-5" />,
-      },
-      {
-        id: "forest3",
-        title: "Wildlife Pack",
-        description: "Add various animals to your virtual forest ecosystem",
-        cost: 800,
-        image: "/placeholder.svg?height=200&width=300",
-        category: "forest",
-        icon: <TreePine className="h-5 w-5" />,
-      },
-    ],
+  const filteredRewards = {
+    cash: rewards.filter(reward => reward.category === 'cash'),
+    products: rewards.filter(reward => reward.category === 'product'),
+    forest: rewards.filter(reward => reward.category === 'forest')
   }
 
-  const allRewards = [...rewards.cash, ...rewards.products, ...rewards.forest]
+  if (loading) {
+    return (
+      <DashboardShell>
+        <div className="flex items-center justify-center h-64">
+          Loading rewards...
+        </div>
+      </DashboardShell>
+    )
+  }
 
   return (
     <DashboardShell>
@@ -127,7 +88,7 @@ export default function RewardsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-primary">Rewards</h1>
         <div className="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-lg">
           <Leaf className="h-5 w-5 text-primary" />
-          <span className="font-bold text-primary">{userCoins} Green Coins</span>
+          <span className="font-bold text-primary">{userData?.coins || 0} Green Coins</span>
         </div>
       </div>
 
@@ -141,7 +102,7 @@ export default function RewardsPage() {
 
         <TabsContent value="all" className="mt-4">
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {allRewards.map((reward) => (
+            {rewards.map((reward) => (
               <RewardCard key={reward.id} {...reward} onSelect={() => handleRewardSelect(reward)} />
             ))}
           </div>
@@ -149,7 +110,7 @@ export default function RewardsPage() {
 
         <TabsContent value="cash" className="mt-4">
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {rewards.cash.map((reward) => (
+            {filteredRewards.cash.map((reward) => (
               <RewardCard key={reward.id} {...reward} onSelect={() => handleRewardSelect(reward)} />
             ))}
           </div>
@@ -157,7 +118,7 @@ export default function RewardsPage() {
 
         <TabsContent value="products" className="mt-4">
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {rewards.products.map((reward) => (
+            {filteredRewards.products.map((reward) => (
               <RewardCard key={reward.id} {...reward} onSelect={() => handleRewardSelect(reward)} />
             ))}
           </div>
@@ -165,7 +126,7 @@ export default function RewardsPage() {
 
         <TabsContent value="forest" className="mt-4">
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {rewards.forest.map((reward) => (
+            {filteredRewards.forest.map((reward) => (
               <RewardCard key={reward.id} {...reward} onSelect={() => handleRewardSelect(reward)} />
             ))}
           </div>
@@ -216,7 +177,7 @@ export default function RewardsPage() {
       {selectedReward && (
         <RewardRedemption
           reward={selectedReward}
-          userCoins={userCoins}
+          userCoins={userData?.coins || 0}
           onClose={() => setSelectedReward(null)}
           onComplete={handleRedemptionComplete}
         />

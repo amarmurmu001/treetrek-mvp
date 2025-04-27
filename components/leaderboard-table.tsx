@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Trophy, Leaf, Search, Filter, TreePine } from "lucide-react"
+import { Trophy, Leaf, Search, Filter, TreePine, Globe, MapPin } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { getLeaderboard } from "@/lib/supabase-service"
 import { useToast } from "@/hooks/use-toast"
@@ -20,7 +20,13 @@ interface LeaderboardEntry {
   last_active: string
 }
 
-export function LeaderboardTable() {
+interface LeaderboardTableProps {
+  isGlobal?: boolean
+  isLocal?: boolean
+  isGuild?: boolean
+}
+
+export function LeaderboardTable({ isGlobal, isLocal, isGuild }: LeaderboardTableProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'week'>('all')
   const [sortBy, setSortBy] = useState<"trees" | "coins" | "streak">("trees")
@@ -30,13 +36,18 @@ export function LeaderboardTable() {
 
   useEffect(() => {
     fetchLeaderboard()
-  }, [timeFilter])
+  }, [timeFilter, isGlobal, isLocal, isGuild])
 
   const fetchLeaderboard = async () => {
     try {
       setLoading(true)
-      const data = await getLeaderboard(timeFilter)
+      const data = await getLeaderboard(timeFilter, {
+        isGlobal,
+        isLocal,
+        isGuild
+      })
       setLeaderboard(data as LeaderboardEntry[])
+      console.log("Leaderboard data:", data)
     } catch (error) {
       console.error("Error fetching leaderboard:", error)
       toast({
@@ -79,6 +90,24 @@ export function LeaderboardTable() {
     }
   }
 
+  const getTitle = () => {
+    if (isGuild) return "Guild Leaderboard"
+    if (isLocal) return "Local Leaderboard"
+    return "Global Leaderboard"
+  }
+
+  const getDescription = () => {
+    if (isGuild) return "Top performing guilds in the community"
+    if (isLocal) return "Top Eco-Warriors in your area"
+    return "Top Eco-Warriors making a difference"
+  }
+
+  const getIcon = () => {
+    if (isGuild) return <Trophy className="h-5 w-5 text-green-700" />
+    if (isLocal) return <MapPin className="h-5 w-5 text-green-700" />
+    return <Globe className="h-5 w-5 text-green-700" />
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-64">Loading leaderboard...</div>
   }
@@ -87,11 +116,11 @@ export function LeaderboardTable() {
     <Card className="w-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Trophy className="h-5 w-5 text-green-700" />
-          Global Leaderboard
+          {getIcon()}
+          {getTitle()}
         </CardTitle>
         <CardDescription>
-          Top Eco-Warriors making a difference
+          {getDescription()}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -134,7 +163,7 @@ export function LeaderboardTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>Rank</TableHead>
-                <TableHead>User</TableHead>
+                <TableHead>{isGuild ? 'Guild' : 'User'}</TableHead>
                 <TableHead>Trees</TableHead>
                 <TableHead>Coins</TableHead>
                 <TableHead>Streak</TableHead>

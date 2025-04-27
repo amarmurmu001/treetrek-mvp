@@ -1,3 +1,5 @@
+"use client"
+
 import { Calendar, Filter, MapPin, Plus, TreePine, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"

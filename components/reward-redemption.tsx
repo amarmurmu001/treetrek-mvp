@@ -12,6 +12,7 @@ import { Gift, Leaf, Package, Truck } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { redeemReward } from "@/lib/supabase-service"
 import { supabase } from "@/lib/supabase"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface Reward {
   id: string
@@ -21,41 +22,21 @@ interface Reward {
   image_url: string
 }
 
-export function RewardRedemption() {
-  const [rewards, setRewards] = useState<Reward[]>([])
-  const [selectedReward, setSelectedReward] = useState<string>("")
-  const [quantity, setQuantity] = useState<number>(1)
-  const [loading, setLoading] = useState(true)
-  const { user, userData } = useAuth()
+interface RewardRedemptionProps {
+  reward: Reward
+  userCoins: number
+  onClose: () => void
+  onComplete: () => void
+}
+
+export function RewardRedemption({ reward, userCoins, onClose, onComplete }: RewardRedemptionProps) {
+  const [quantity, setQuantity] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const { user } = useAuth()
   const { toast } = useToast()
 
-  useEffect(() => {
-    fetchRewards()
-  }, [])
-
-  const fetchRewards = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('rewards')
-        .select('*')
-        .order('cost', { ascending: true })
-
-      if (error) throw error
-      setRewards(data || [])
-    } catch (error) {
-      console.error('Error fetching rewards:', error)
-      toast({
-        title: "Error",
-        description: "Failed to load rewards. Please try again.",
-        variant: "destructive"
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRedeem = async (rewardId: string, cost: number) => {
-    if (!user || !userData) {
+  const handleRedeem = async () => {
+    if (!user) {
       toast({
         title: "Error",
         description: "Please sign in to redeem rewards.",
@@ -64,7 +45,7 @@ export function RewardRedemption() {
       return
     }
 
-    if (userData.coins < cost) {
+    if (userCoins < reward.cost * quantity) {
       toast({
         title: "Insufficient Coins",
         description: "You don't have enough coins to redeem this reward.",
@@ -74,54 +55,78 @@ export function RewardRedemption() {
     }
 
     try {
-      await redeemReward(user.id, rewardId, 1)
-      toast({
-        title: "Success",
-        description: "Reward redeemed successfully!"
-      })
-      // Refresh user data to update coin balance
-      window.location.reload()
+      setLoading(true)
+      await redeemReward(user.id, reward.id, quantity)
+      onComplete()
     } catch (error: any) {
       toast({
         title: "Error",
         description: error.message || "Failed to redeem reward. Please try again.",
         variant: "destructive"
       })
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (loading) {
-    return <div>Loading rewards...</div>
-  }
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {rewards.map((reward) => (
-        <Card key={reward.id}>
-          <CardHeader>
-            <CardTitle>{reward.name}</CardTitle>
-            <CardDescription>{reward.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <img
-              src={reward.image_url}
-              alt={reward.name}
-              className="w-full h-48 object-cover rounded-md"
-            />
-          </CardContent>
-          <CardFooter className="flex justify-between items-center">
-            <div className="text-sm font-medium">
-              {reward.cost} coins
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Redeem {reward.name}</DialogTitle>
+          <DialogDescription>
+            {reward.description}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="flex items-center justify-between">
+            <Label>Quantity</Label>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                disabled={quantity <= 1}
+              >
+                -
+              </Button>
+              <Input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-16 text-center"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setQuantity(quantity + 1)}
+              >
+                +
+              </Button>
             </div>
-            <Button
-              onClick={() => handleRedeem(reward.id, reward.cost)}
-              disabled={!user || !userData || userData.coins < reward.cost}
-            >
-              Redeem
-            </Button>
-          </CardFooter>
-        </Card>
-      ))}
-    </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Total Cost</Label>
+            <span className="font-medium">{reward.cost * quantity} Green Coins</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label>Your Balance</Label>
+            <span className="font-medium">{userCoins} Green Coins</span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRedeem}
+            disabled={loading || userCoins < reward.cost * quantity}
+          >
+            {loading ? "Redeeming..." : "Redeem Reward"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
